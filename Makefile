@@ -1,4 +1,4 @@
-.PHONY: create_environment calibrate
+.PHONY: create_environment calibrate calibration_reports
 
 #################################################################################
 # GLOBALS                                                                       #
@@ -9,6 +9,9 @@ DATA_DIR = data
 DATA_RAW_DIR := $(DATA_DIR)/raw
 DATA_INTERIM_DIR := $(DATA_DIR)/interim
 DATA_PROCESSED_DIR := $(DATA_DIR)/processed
+
+NOTEBOOKS_DIR = notebooks
+REPORTS_DIR = reports
 
 define MAKE_DATA_SUB_DIR
 $(DATA_SUB_DIR): | $(DATA_DIR)
@@ -67,14 +70,14 @@ T_TIF_FILEPATHS := $(addprefix $(T_INPUTS_DIR)/, July4-6_2012_DayTemp1.tif \
 CALIBRATED_PARAMS_JSON_FILEPATHS := $(addprefix $(DATA_PROCESSED_DIR)/, \
 	$(addsuffix .json, $(basename $(notdir $(T_TIF_FILEPATHS)))))
 
+BIOPHYSICAL_TABLE_CSV := $(INVEST_INPUTS_DIR)/ucm_200316__NLCD_CURRENT.csv
 T_REPROJ_TIF = $(DATA_INTERIM_DIR)/$(notdir $(T_TIF))
 define CALIBRATION_RUN
 $(T_REPROJ_TIF): $(T_TIF) $(LULC_SRS_WKT)
 	gdalwarp -t_srs $(LULC_SRS_WKT) $(T_TIF) $$@
 $(DATA_PROCESSED_DIR)/$(notdir $(basename $(T_REPROJ_TIF))).json: \
 	$(REF_ET_REPROJ_TIF) $(T_REPROJ_TIF) | $(DATA_PROCESSED_DIR)
-	invest-ucm-calibration $(LULC_ADF) \
-		$(INVEST_INPUTS_DIR)/ucm_200316__NLCD_CURRENT.csv factors \
+	invest-ucm-calibration $(LULC_ADF) $(BIOPHYSICAL_TABLE_CSV) factors \
 		--ref-et-raster-filepaths $(REF_ET_REPROJ_TIF) \
 		--t-raster-filepaths $(T_REPROJ_TIF) --dst-filepath $$@
 endef
@@ -82,6 +85,43 @@ endef
 $(foreach T_TIF, $(T_TIF_FILEPATHS), $(eval $(CALIBRATION_RUN)))
 
 calibrate: $(CALIBRATED_PARAMS_JSON_FILEPATHS)
+
+# 3. Notebooks
+CALIBRATION_REPORT_IPYNB = $(NOTEBOOKS_DIR)/calibration-report.ipynb
+NOTEBOOKS_OUTPUT_DIR := $(NOTEBOOKS_DIR)/output
+
+$(NOTEBOOKS_OUTPUT_DIR): | $(NOTEBOOKS_DIR)
+	mkdir $@
+$(REPORTS_DIR):
+	mkdir $@
+
+
+T_RASTER_TIF = $(DATA_INTERIM_DIR)/$(CALIBRATION_FILENAME).tif
+CALIBRATED_PARAMS_JSON = $(DATA_PROCESSED_DIR)/$(CALIBRATION_FILENAME).json
+NOTEBOOK_OUT_IPYNB = $(NOTEBOOKS_OUTPUT_DIR)/$(CALIBRATION_FILENAME).ipynb
+NOTEBOOK_OUT_PDF = $(REPORTS_DIR)/$(CALIBRATION_FILENAME).pdf
+define CALIBRATION_REPORT
+$(NOTEBOOK_OUT_IPYNB): $(LULC_ADF) $(BIOPHYSICAL_TABLE_CSV) \
+	$(REF_ET_REPROJ_TIF) $(T_RASTER_TIF) $(CALIBRATED_PARAMS_JSON) \
+	$(CALIBRATION_REPORT_IPYNB) | $(NOTEBOOKS_OUTPUT_DIR)
+	papermill $(CALIBRATION_REPORT_IPYNB) $$@ \
+		-p lulc_raster_filepath $(LULC_ADF) \
+		-p biophysical_table_filepath $(BIOPHYSICAL_TABLE_CSV) \
+		-p ref_et_raster_filepath $(REF_ET_REPROJ_TIF) \
+		-p t_raster_filepath $(T_RASTER_TIF) \
+		-p calibrated_params_filepath $(CALIBRATED_PARAMS_JSON)
+$(NOTEBOOK_OUT_PDF): $(NOTEBOOK_OUT_IPYNB) | $(REPORTS_DIR)
+	jupyter-nbconvert $$< --to pdf --output-dir $(REPORTS_DIR)
+endef
+
+CALIBRATION_FILENAMES := $(notdir $(basename \
+	$(CALIBRATED_PARAMS_JSON_FILEPATHS)))
+$(foreach CALIBRATION_FILENAME, $(CALIBRATION_FILENAMES), \
+	$(eval $(CALIBRATION_REPORT)))
+CALIBRATION_REPORTS_PDF_FILEPATHS := $(addprefix $(REPORTS_DIR)/, \
+	$(addsuffix .pdf, $(notdir $(basename $(CALIBRATION_FILENAMES)))))
+
+calibration_reports: $(CALIBRATION_REPORTS_PDF_FILEPATHS)
 
 #################################################################################
 # Self Documenting Commands                                                     #

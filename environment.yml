@@ -5,7 +5,7 @@ dependencies:
   - pip
   - pip:
     - flake8-isort==2.7.0
-    - invest-ucm-calibration==0.3.3
+    - invest-ucm-calibration==0.4.1
   - setuptools
   - wheel
   - click
@@ -17,5 +17,8 @@ dependencies:
   - python=3
   - ipykernel
   - gdal<3.0
+  - matplotlib
+  - nbconvert
+  - papermill
   - rtree
   - shapely<1.7.0

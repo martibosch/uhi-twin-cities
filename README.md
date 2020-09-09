@@ -68,6 +68,17 @@ make calibrate
 
 which will dump the calibrated parameters for each file in the `data/processed` directory (which will be created automatically if it does not exist).
 
+### 5. Generate the calibration reports
+
+Reports for the calibration of the urban cooling model for each of the reference temperature rasters can be obtained as in:
+
+```bash
+make calibration_reports
+```
+
+which will generate a PDF calibration report and dump it to the `reports` directory (which will be created automatically if it does not exist).
+
+
 --------
 
 Project based on the [cookiecutter data science project template](https://drivendata.github.io/cookiecutter-data-science). #cookiecutterdatascience
