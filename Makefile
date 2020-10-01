@@ -62,29 +62,38 @@ $(LST_TIF): $(LST_ADF) $(LULC_SRS_WKT) | $(LST_TO_REPROJ_DIR)
 	gdalwarp -t_srs $(LULC_SRS_WKT) $(LST_ADF) $@
 
 # 2. Calibration
-## 2.1 Make a list of all the ref. temperature maps against which we calibrate
-T_TIF_FILEPATHS := $(addprefix $(T_INPUTS_DIR)/, July4-6_2012_DayTemp1.tif \
-	July4-6_2012_NightTemp1.tif JJA_Day_Temp1.tif JJA_Night_Temp1.tif) \
-	$(LST_TIF)
-## 2.2 Dump the calibration parameters of each calibration 
-CALIBRATED_PARAMS_JSON_FILEPATHS := $(addprefix $(DATA_PROCESSED_DIR)/, \
-	$(addsuffix .json, $(basename $(notdir $(T_TIF_FILEPATHS)))))
-
 BIOPHYSICAL_TABLE_CSV := $(INVEST_INPUTS_DIR)/ucm_200316__NLCD_CURRENT.csv
+## 2.1 Make a list of all the ref. temperature maps against which we calibrate
+T_FACTORS_TIF_FILEPATHS := $(addprefix $(T_INPUTS_DIR)/, \
+	July4-6_2012_DayTemp1.tif JJA_Day_Temp1.tif)
+T_INTENSITY_TIF_FILEPATHS := $(addprefix $(T_INPUTS_DIR)/, \
+	July4-6_2012_NightTemp1.tif JJA_Night_Temp1.tif) $(LST_TIF)
+## 2.2 Dump the calibration parameters of each calibration 
+CALIBRATED_PARAMS_FACTORS_JSON_FILEPATHS := $(addprefix $(DATA_PROCESSED_DIR)/, \
+	$(addsuffix .json, $(basename $(notdir $(T_FACTORS_TIF_FILEPATHS)))))
+CALIBRATED_PARAMS_INTENSITY_JSON_FILEPATHS := $(addprefix \
+	$(DATA_PROCESSED_DIR)/, $(addsuffix .json, $(basename $(notdir \
+	$(T_INTENSITY_TIF_FILEPATHS)))))
+
 T_REPROJ_TIF = $(DATA_INTERIM_DIR)/$(notdir $(T_TIF))
 define CALIBRATION_RUN
 $(T_REPROJ_TIF): $(T_TIF) $(LULC_SRS_WKT)
 	gdalwarp -t_srs $(LULC_SRS_WKT) $(T_TIF) $$@
 $(DATA_PROCESSED_DIR)/$(notdir $(basename $(T_REPROJ_TIF))).json: \
 	$(REF_ET_REPROJ_TIF) $(T_REPROJ_TIF) | $(DATA_PROCESSED_DIR)
-	invest-ucm-calibration $(LULC_ADF) $(BIOPHYSICAL_TABLE_CSV) factors \
+	invest-ucm-calibration $(LULC_ADF) \
+		$(BIOPHYSICAL_TABLE_CSV) $(CC_METHOD) \
 		--ref-et-raster-filepaths $(REF_ET_REPROJ_TIF) \
 		--t-raster-filepaths $(T_REPROJ_TIF) --dst-filepath $$@
 endef
 
-$(foreach T_TIF, $(T_TIF_FILEPATHS), $(eval $(CALIBRATION_RUN)))
+CC_METHOD := factors
+$(foreach T_TIF, $(T_FACTORS_TIF_FILEPATHS), $(eval $(CALIBRATION_RUN)))
+CC_METHOD := intensity
+$(foreach T_TIF, $(T_INTENSITY_TIF_FILEPATHS), $(eval $(CALIBRATION_RUN)))
 
-calibrate: $(CALIBRATED_PARAMS_JSON_FILEPATHS)
+calibrate: $(CALIBRATED_PARAMS_FACTORS_JSON_FILEPATHS) \
+	$(CALIBRATED_PARAMS_INTENSITY_JSON_FILEPATHS)
 
 # 3. Notebooks
 CALIBRATION_REPORT_IPYNB = $(NOTEBOOKS_DIR)/calibration-report.ipynb
@@ -107,6 +116,7 @@ $(NOTEBOOK_OUT_IPYNB): $(LULC_ADF) $(BIOPHYSICAL_TABLE_CSV) \
 	papermill $(CALIBRATION_REPORT_IPYNB) $$@ \
 		-p lulc_raster_filepath $(LULC_ADF) \
 		-p biophysical_table_filepath $(BIOPHYSICAL_TABLE_CSV) \
+		-p cc_method $(CC_METHOD) \
 		-p ref_et_raster_filepath $(REF_ET_REPROJ_TIF) \
 		-p t_raster_filepath $(T_RASTER_TIF) \
 		-p calibrated_params_filepath $(CALIBRATED_PARAMS_JSON)
@@ -114,14 +124,25 @@ $(NOTEBOOK_OUT_PDF): $(NOTEBOOK_OUT_IPYNB) | $(REPORTS_DIR)
 	jupyter-nbconvert $$< --to pdf --output-dir $(REPORTS_DIR)
 endef
 
-CALIBRATION_FILENAMES := $(notdir $(basename \
-	$(CALIBRATED_PARAMS_JSON_FILEPATHS)))
-$(foreach CALIBRATION_FILENAME, $(CALIBRATION_FILENAMES), \
+
+
+CALIBRATION_FACTORS_FILENAMES := $(notdir $(basename \
+	$(CALIBRATED_PARAMS_FACTORS_JSON_FILEPATHS)))
+CALIBRATION_INTENSITY_FILENAMES := $(notdir $(basename \
+	$(CALIBRATED_PARAMS_INTENSITY_JSON_FILEPATHS)))
+CC_METHOD := factors
+$(foreach CALIBRATION_FILENAME, $(CALIBRATION_FACTORS_FILENAMES), \
 	$(eval $(CALIBRATION_REPORT)))
+CC_METHOD := intensity
+$(foreach CALIBRATION_FILENAME, $(CALIBRATION_INTENSITY_FILENAMES), \
+	$(eval $(CALIBRATION_REPORT)))
+
 CALIBRATION_REPORTS_PDF_FILEPATHS := $(addprefix $(REPORTS_DIR)/, \
-	$(addsuffix .pdf, $(notdir $(basename $(CALIBRATION_FILENAMES)))))
+	$(addsuffix .pdf, $(notdir $(basename \
+	$(CALIBRATION_FACTORS_FILENAMES) $(CALIBRATION_INTENSITY_FILENAMES)))))
 
 calibration_reports: $(CALIBRATION_REPORTS_PDF_FILEPATHS)
+
 
 #################################################################################
 # Self Documenting Commands                                                     #
